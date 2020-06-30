@@ -8,8 +8,8 @@
 
 
 # train and val datasets (image directory or *.txt file with image paths)
-train: ../acacia/train/
-val: ../acacia/valid/
+train: /content/acacia/train/
+val: /content/acacia/valid/
 
 # number of classes
 nc: 1

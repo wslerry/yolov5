@@ -8,8 +8,8 @@
 
 
 # train and val datasets (image directory or *.txt file with image paths)
-train: ../oilpalm/train.txt
-val: ../oilpalm/test.txt
+train: /content/oilpalm/train.txt
+val: /content/oilpalm/test.txt
 
 # number of classes
 nc: 1
