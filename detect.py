@@ -5,6 +5,7 @@ import torch.backends.cudnn as cudnn
 from utils import google_utils
 from utils.datasets import *
 from utils.utils import *
+import pandas as pd
 
 
 def detect(save_img=False):
@@ -53,12 +54,18 @@ def detect(save_img=False):
     t0 = time.time()
     img = torch.zeros((1, 3, imgsz, imgsz), device=device)  # init img
     _ = model(img.half() if half else img) if device.type != 'cpu' else None  # run once
+
+    class_list = list()
+
     for path, img, im0s, vid_cap in dataset:
         img = torch.from_numpy(img).to(device)
         img = img.half() if half else img.float()  # uint8 to fp16/32
         img /= 255.0  # 0 - 255 to 0.0 - 1.0
         if img.ndimension() == 3:
             img = img.unsqueeze(0)
+
+        input_img = cv2.imread(path)
+        src_imgwidth, src_imgheight = input_img.shape[0], input_img.shape[1]
 
         # Inference
         t1 = torch_utils.time_synchronized()
@@ -80,6 +87,11 @@ def detect(save_img=False):
                 p, s, im0 = path, '', im0s
 
             save_path = str(Path(out) / Path(p).name)
+
+            file_path = os.path.dirname(save_path)
+            filename = os.path.basename(save_path)
+            filename = os.path.splitext(filename)[0]
+
             txt_path = str(Path(out) / Path(p).stem) + ('_%g' % dataset.frame if dataset.mode == 'video' else '')
             s += '%gx%g ' % img.shape[2:]  # print string
             gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
@@ -98,6 +110,22 @@ def detect(save_img=False):
                         xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
                         with open(txt_path + '.txt', 'a') as f:
                             f.write(('%g ' * 5 + '\n') % (cls, *xywh))  # label format
+
+                    if opt.save_label:
+                        labeldir = os.path.join(os.path.join(file_path), filename + '.txt')
+                        with open(labeldir, 'a') as labelbox:
+                            c1, c2 = (int(xyxy[0]), int(xyxy[1])), (int(xyxy[2]), int(xyxy[3]))
+                            (left, top) = (c1[0], c1[1])
+                            (width, height) = (c2[0] - left, c2[1] - top)
+
+                            center_x = float(left + (width / 2)) / src_imgwidth
+                            center_y = float(top + (height / 2)) / src_imgheight
+                            width = float(width / src_imgwidth)
+                            height = float(height / src_imgheight)
+
+                            labelbox.write(f'{round(int(cls),0)} {center_x:.6f} {center_y:.6f} {width:.6f} {height:.6f}\n')
+
+                        class_list.append([names[int(cls)]])
 
                     if save_img or view_img:  # Add bbox to image
                         label = '%s %.2f' % (names[int(cls)], conf)
@@ -133,6 +161,13 @@ def detect(save_img=False):
         if platform == 'darwin':  # MacOS
             os.system('open ' + save_path)
 
+    if opt.save_label:
+        df = pd.DataFrame(class_list, columns=['classes'])
+        group_data = df.groupby(df['classes'], sort=False)
+        df = pd.DataFrame(group_data.count().reset_index())
+
+        df.to_csv(out + "/classes.txt", header=False, index=False, sep='\t', mode='a')
+
     print('Done. (%.3fs)' % (time.time() - t0))
 
 
@@ -148,6 +183,7 @@ if __name__ == '__main__':
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--view-img', action='store_true', help='display results')
     parser.add_argument('--save-txt', action='store_true', help='save results to *.txt')
+    parser.add_argument('--save-label', action='store_true', help='save labels to *.txt')
     parser.add_argument('--classes', nargs='+', type=int, help='filter by class')
     parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
     parser.add_argument('--augment', action='store_true', help='augmented inference')
